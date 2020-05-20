@@ -771,6 +771,43 @@ tcp_bind_netif(struct tcp_pcb *pcb, const struct netif *netif)
   }
 }
 
+/**
+ * added by badvpn and trojan
+ */
+err_t
+tcp_bind_to_netif(struct tcp_pcb *pcb, const char ifname[3], const struct netif *netif)
+{
+  int i;
+  struct tcp_pcb *cpcb;
+  
+  LWIP_ERROR("tcp_bind_to_netif: can only bind in state CLOSED", pcb->state == CLOSED, return ERR_VAL);
+
+  /* Check if the interface is already in use (in tcp_listen_pcbs and tcp_bound_pcbs) */
+  for (i = 0; i < 2; i++) {
+    for (cpcb = *tcp_pcb_lists[i]; cpcb != NULL; cpcb = cpcb->next) {
+      if (cpcb->bound_to_netif &&
+          !memcmp(cpcb->local_netif, ifname, sizeof(cpcb->local_netif)) && (
+            IP_IS_ANY_TYPE_VAL(pcb->local_ip) || IP_IS_ANY_TYPE_VAL(cpcb->local_ip) ||
+            IP_GET_TYPE(&pcb->local_ip) == IP_GET_TYPE(&cpcb->local_ip))) {
+        return ERR_USE;
+      }
+    }
+  }
+
+  pcb->bound_to_netif = 1;
+  if (!IP_IS_ANY_TYPE_VAL(pcb->local_ip)) {
+    ip_addr_set_any(IP_IS_V6(&pcb->local_ip), &pcb->local_ip);
+  }
+  pcb->local_port = 0;
+  memcpy(pcb->local_netif, ifname, sizeof(pcb->local_netif));
+  TCP_REG(&tcp_bound_pcbs, pcb);
+  LWIP_DEBUGF(TCP_DEBUG, ("tcp_bind_to_netif: bind to interface %c%c%c\n", ifname[0], ifname[1], ifname[2]));
+  
+  tcp_bind_netif(pcb, netif);
+
+  return ERR_OK;
+}
+
 #if LWIP_CALLBACK_API
 /**
  * Default accept callback if no accept callback is specified by the user.
